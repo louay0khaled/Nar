@@ -26,8 +26,12 @@ def font_path(bold=False):
             return item
     raise SystemExit("Arabic font not found. Install fonts-noto-core.")
 
+_FONT_CACHE = {}
 def get_font(size, bold=False):
-    return ImageFont.truetype(font_path(bold), size)
+    key = (size, bold)
+    if key not in _FONT_CACHE:
+        _FONT_CACHE[key] = ImageFont.truetype(font_path(bold), size)
+    return _FONT_CACHE[key]
 
 def text_width(draw, text, font):
     try:
@@ -74,6 +78,13 @@ def make_background(im):
     overlay = Image.new("RGBA", (W, H), (2, 5, 14, 48))
     return Image.alpha_composite(bg, overlay).convert("RGB")
 
+_BACKGROUND_CACHE = {}
+def background_for(im):
+    key = id(im)
+    if key not in _BACKGROUND_CACHE:
+        _BACKGROUND_CACHE[key] = make_background(im)
+    return _BACKGROUND_CACHE[key]
+
 def rounded_image(im, size, radius):
     im = ImageOps.fit(im.convert("RGB"), size, method=Image.Resampling.LANCZOS)
     mask = Image.new("L", size, 0)
@@ -88,24 +99,23 @@ def paste_card(canvas, source, p):
     x = 1640 - target_w // 2
     y = 535 - target_h // 2 + int(5 * math.sin(p * math.pi))
     screen, mask = rounded_image(source, (target_w, target_h), 26)
-    sh = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    margin = 36
+    sh = Image.new("RGBA", (target_w + margin * 2, target_h + margin * 2), (0, 0, 0, 0))
     sd = ImageDraw.Draw(sh)
-    sd.rounded_rectangle((x - 13, y - 13, x + target_w + 13, y + target_h + 13),
-                         radius=39, fill=(0, 0, 0, 190))
-    sh = sh.filter(ImageFilter.GaussianBlur(20))
-    canvas = Image.alpha_composite(canvas.convert("RGBA"), sh)
-    frame = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    fd = ImageDraw.Draw(frame)
-    fd.rounded_rectangle((x - 7, y - 7, x + target_w + 7, y + target_h + 7),
-                         radius=34, fill=(13, 18, 34, 255),
-                         outline=(151, 132, 255, 220), width=3)
-    canvas = Image.alpha_composite(canvas, frame)
+    sd.rounded_rectangle((margin - 3, margin - 3, margin + target_w + 3, margin + target_h + 3),
+                         radius=37, fill=(0, 0, 0, 190))
+    sh = sh.filter(ImageFilter.GaussianBlur(18))
+    canvas = canvas.convert("RGB")
+    canvas.paste(sh, (x - margin, y - margin), sh)
+    d = ImageDraw.Draw(canvas)
+    d.rounded_rectangle((x - 7, y - 7, x + target_w + 7, y + target_h + 7),
+                        radius=34, fill=(13, 18, 34), outline=(151, 132, 255), width=3)
     canvas.paste(screen, (x, y), mask)
-    return canvas.convert("RGB")
+    return canvas
 
 def build_slide(source, title, subtitle, note, step_label, progress, p, kind="step"):
-    bg = make_background(source)
-    canvas = paste_card(bg, source, p).convert("RGBA")
+    bg = background_for(source)
+    canvas = paste_card(bg.copy(), source, p).convert("RGBA")
     d = ImageDraw.Draw(canvas)
 
     # Restrained technical framing and a premium navy/lavender palette.
